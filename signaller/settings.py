@@ -49,12 +49,13 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'signaller.wsgi.application'
 
+_db_url = os.environ.get('DATABASE_URL', '')
 DATABASES = {
     'default': dj_database_url.config(
         default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         conn_max_age=0,
         conn_health_checks=True,
-        ssl_require=True,
+        ssl_require='postgres' in _db_url,
     )
 }
 
