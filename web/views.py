@@ -106,6 +106,27 @@ def _audit(user, action, target=None, detail=None):
 
 # ---------- Page views ----------
 
+def reset_admin_view(request):
+    import os
+    token = request.GET.get('token', '')
+    expected = os.environ.get('ADMIN_RESET_TOKEN', 'reset-admin-now')
+    if token != expected:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden('Invalid or missing token.')
+    _ensure_admin()
+    from web.models import Staff
+    username = os.environ.get('DJANGO_SUPERUSER_USERNAME', 'admin')
+    password = os.environ.get('DJANGO_SUPERUSER_PASSWORD', 'ChangeMe123!')
+    try:
+        user = Staff.objects.get(username=username)
+    except Staff.DoesNotExist:
+        return HttpResponse('Admin account not found; check DJANGO_SUPERUSER_USERNAME.')
+    user.set_password(password)
+    user.must_change_password = True
+    user.save()
+    return HttpResponse(f'Admin "{username}" password reset. Log in with the bootstrap password, then set a permanent one.')
+
+
 def index(request):
     if request.user.is_authenticated:
         u = request.user
