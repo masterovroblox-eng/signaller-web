@@ -30,7 +30,6 @@ async function api(path, opts) {
     return data;
 }
 
-let currentUser = null;
 let authReady = (async () => {
     if (window.location.pathname.includes('login')) return null;
     try {
@@ -148,4 +147,3 @@ window.requireAuth = requireAuth;
 window.requireAdmin = requireAdmin;
 window.confirmDataExport = confirmDataExport;
 window.authReady = authReady;
-window.currentUser = currentUser;
