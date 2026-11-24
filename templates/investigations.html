@@ -1,0 +1,265 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investigations | Signaller Web</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'assets/favicon.png' %}">
+    <meta name="theme-color" content="#0f172a">
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+    <style>
+        body { background: #f1f5f9; }
+    </style>
+</head>
+<body>
+<header>
+    <div class="nav-container">
+        <div class="logo-area">
+            <img class="nav-logo" src="{% static 'assets/logo.png' %}" alt="Signaller Web">
+            <span class="nav-title">Incident Investigations</span>
+        </div>
+        <div class="nav-buttons-wrapper" id="nav-buttons"></div>
+    </div>
+</header>
+
+<div class="inv-main">
+    <div class="glass-search" id="glass-search">
+        <span class="glass-icon">🔍</span>
+        <input class="glass-input" id="inv-search" type="text" placeholder="Search by name, case number, title, location… (fuzzy)" autocomplete="off" oninput="onSearch(this.value)" onfocus="onSearch(this.value)">
+        <div class="glass-results" id="glass-results"></div>
+    </div>
+    <div class="inv-section">
+        <h2>
+            🔍 Investigations
+            <button class="btn btn-primary" onclick="showCreateModal()" style="margin-left:auto;">+ New Investigation</button>
+        </h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Case</th>
+                    <th>Title</th>
+                    <th>Incident Date</th>
+                    <th>Location</th>
+                    <th>Status</th>
+                    <th>Opened By</th>
+                    <th>Updated</th>
+                </tr>
+            </thead>
+            <tbody id="inv-list"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal-overlay hidden" id="create-modal">
+    <div class="modal-box" style="max-width:640px;">
+        <h3>New Investigation</h3>
+        <div class="form-group"><label for="inv-title">Title *</label><input id="inv-title" placeholder="Brief incident title"></div>
+        <div class="form-group"><label for="inv-date">Incident Date</label><input id="inv-date" type="date"></div>
+        <div class="form-group"><label for="inv-location">Location</label><input id="inv-location" placeholder="Where did it happen?"></div>
+        <div class="form-group"><label for="inv-parties">Involved Parties</label><input id="inv-parties" placeholder="Usernames, roles, etc."></div>
+        <div class="form-group"><label for="inv-rank">Rank of Offender</label><input id="inv-rank" placeholder="e.g. Signaller, Supervisor"></div>
+        <div class="form-group"><label for="inv-history">Previous History</label><textarea id="inv-history" placeholder="Previous incidents, warnings, etc." maxlength="3000"></textarea></div>
+        <div class="form-group"><label for="inv-desc">Incident Description</label><textarea id="inv-desc" placeholder="What happened?" maxlength="5000"></textarea></div>
+        <div class="form-group"><label for="inv-mitigating">Mitigating Circumstances</label><textarea id="inv-mitigating" placeholder="Mitigating factors" maxlength="3000"></textarea></div>
+        <div class="form-group"><label for="inv-aggravating">Aggravating Circumstances</label><textarea id="inv-aggravating" placeholder="Aggravating factors" maxlength="3000"></textarea></div>
+        <div class="form-group"><label>Witness Statements (up to 3 PDFs)</label><input type="file" id="inv-witness-0" accept="application/pdf" style="margin-bottom:6px;"><input type="file" id="inv-witness-1" accept="application/pdf" style="margin-bottom:6px;"><input type="file" id="inv-witness-2" accept="application/pdf"></div>
+        <div class="form-group"><label for="inv-outcome">Outcome</label><textarea id="inv-outcome" placeholder="Outcome" maxlength="5000"></textarea></div>
+        <div class="form-group" id="inv-investigators-group" style="display:none;"><label for="inv-investigators">Investigators</label><textarea id="inv-investigators" placeholder="Admin-only investigators" maxlength="2000"></textarea></div>
+        <div class="form-group" id="inv-redacted-group" style="display:none;"><label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="inv-redacted" style="width:auto;"> Redacted (admin only — supervisors cannot view)</label></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="hideCreateModal()">Cancel</button>
+            <button class="btn btn-success" onclick="createInvestigation()">Create Investigation</button>
+        </div>
+    </div>
+</div>
+
+<footer class="corner-footer">
+    <p>&copy; Signaller Web</p>
+    <a href="/privacy">Privacy Policy</a> | <a href="/terms">Terms of Service</a>
+</footer>
+
+<script src="{% static 'app.js' %}"></script>
+<script>
+let currentUser = null;
+let allInvs = [];
+let fuse = null;
+
+async function init() {
+    currentUser = await requireAuth();
+    if (!currentUser) return;
+    if (currentUser.role !== 'admin' && currentUser.role !== 'staff' && currentUser.role !== 'controller') {
+        window.location.href = '/login'; return;
+    }
+    if (currentUser.role === 'admin') {
+        const w = document.getElementById('nav-buttons');
+        const btn = document.createElement('button');
+        btn.textContent = 'Admin';
+        btn.className = 'login-btn';
+        btn.style.background = '#10b981';
+        btn.onclick = () => window.location.href = '/admin';
+        w.prepend(btn);
+    }
+    const logoutBtn = document.createElement('button');
+    logoutBtn.textContent = 'Logout';
+    logoutBtn.className = 'login-btn';
+    logoutBtn.style.background = '#ef4444';
+    logoutBtn.onclick = () => logout();
+    document.getElementById('nav-buttons').appendChild(logoutBtn);
+
+    // admin-only fields
+    if (currentUser.role === 'admin') {
+        document.getElementById('inv-investigators-group').style.display = 'block';
+        document.getElementById('inv-redacted-group').style.display = 'block';
+    }
+    loadInvestigations();
+}
+
+async function loadInvestigations() {
+    const tbody = document.getElementById('inv-list');
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="spinner"></div><p>Loading investigations…</p></div></td></tr>';
+    try {
+        const data = await api('/api/investigations');
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="icon">🔍</div><p>No investigations yet.</p></div></td></tr>';
+            allInvs = [];
+            return;
+        }
+        allInvs = data;
+        if (window.Fuse) {
+            fuse = new Fuse(allInvs, {
+                keys: [
+                    { name: 'reference_code', weight: 0.3 },
+                    { name: 'title', weight: 0.3 },
+                    { name: 'involved_parties', weight: 0.2 },
+                    { name: 'offender_rank', weight: 0.15 },
+                    { name: 'location', weight: 0.1 },
+                    { name: 'opened_by', weight: 0.05 }
+                ],
+                threshold: 0.4,
+                ignoreLocation: true,
+                minMatchCharLength: 2,
+                includeScore: true
+            });
+        }
+        renderTable(data);
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:#ef4444;">Error: ${escHtml(err.message)}</td></tr>`;
+    }
+}
+
+function renderTable(data) {
+    const tbody = document.getElementById('inv-list');
+    tbody.innerHTML = '';
+    data.forEach(inv => {
+        const statusClass = inv.status === 'open' ? 'badge badge-open' : 'badge badge-closed';
+        const updated = inv.updated_at ? new Date(inv.updated_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
+        const incDate = inv.incident_date ? new Date(inv.incident_date + 'T00:00:00').toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
+        const tr = document.createElement('tr');
+        const caseNum = inv.reference_code ? `<span style="background:var(--dark, #0f172a);color:#fff;padding:3px 8px;border-radius:6px;font-size:.75rem;font-weight:700;letter-spacing:.03em;border:1px solid #4f46e5;">#${escHtml(fmtCase(inv.reference_code))}</span>` : '<span style="color:#94a3b8;font-size:.8rem;">—</span>';
+        const redactedBadge = inv.is_redacted ? '<span class="badge badge-redacted">REDACTED</span>' : '';
+        tr.innerHTML = `
+            <td data-label="Case">${caseNum}</td>
+            <td data-label="Title"><strong>${escHtml(inv.title)}</strong>${redactedBadge}</td>
+            <td data-label="Date" style="font-size:.88em;color:#64748b;">${incDate}</td>
+            <td data-label="Location" style="font-size:.88em;color:#64748b;">${escHtml(inv.location || '—')}</td>
+            <td data-label="Status"><span class="${statusClass}">${escHtml(inv.status)}</span></td>
+            <td data-label="Opened" style="font-size:.88em;color:#64748b;">${escHtml(inv.opened_by)}</td>
+            <td data-label="Updated" style="font-size:.85em;color:#64748b;">${updated}</td>
+        `;
+        tr.addEventListener('click', () => { window.location.href = `/investigation/${inv.id}`; });
+        tbody.appendChild(tr);
+    });
+}
+
+function showCreateModal() {
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    document.getElementById('inv-investigators-group').style.display = isAdmin ? 'block' : 'none';
+    document.getElementById('inv-redacted-group').style.display = isAdmin ? 'block' : 'none';
+    document.getElementById('create-modal').classList.remove('hidden');
+}
+function hideCreateModal() {
+    document.getElementById('create-modal').classList.add('hidden');
+}
+
+async function createInvestigation() {
+    const title = document.getElementById('inv-title').value.trim();
+    const date = document.getElementById('inv-date').value || null;
+    const location = document.getElementById('inv-location').value.trim();
+    const parties = document.getElementById('inv-parties').value.trim();
+    const rank = document.getElementById('inv-rank').value.trim();
+    const history = document.getElementById('inv-history').value.trim();
+    const desc = document.getElementById('inv-desc').value.trim();
+    const mitigating = document.getElementById('inv-mitigating').value.trim();
+    const aggravating = document.getElementById('inv-aggravating').value.trim();
+    const outcome = document.getElementById('inv-outcome').value.trim();
+    const investigators = document.getElementById('inv-investigators')?.value.trim() || null;
+    const isRedacted = document.getElementById('inv-redacted')?.checked || false;
+    if (!title) { alert('Please enter a title.'); return; }
+    let witnessArr = [];
+    for (let i = 0; i < 3; i++) {
+        const inp = document.getElementById(`inv-witness-${i}`);
+        if (inp && inp.files && inp.files[0]) {
+            const f = inp.files[0];
+            const data = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
+            witnessArr.push({ name: f.name, data });
+        }
+    }
+    const body = {
+        title, incident_date: date, location, involved_parties: parties, description: desc, outcome,
+        mitigating, aggravating, witness: witnessArr, signature: null, rank, history,
+        investigators, redacted: isRedacted
+    };
+    try {
+        await api('/api/investigations', { method: 'POST', body });
+    } catch (err) {
+        alert('Error: ' + err.message); return;
+    }
+    hideCreateModal();
+    ['inv-title','inv-date','inv-location','inv-parties','inv-rank','inv-history','inv-desc','inv-mitigating','inv-aggravating','inv-outcome'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    for (let i = 0; i < 3; i++) { const el = document.getElementById(`inv-witness-${i}`); if (el) el.value = ''; }
+    if (document.getElementById('inv-investigators')) document.getElementById('inv-investigators').value = '';
+    if (document.getElementById('inv-redacted')) document.getElementById('inv-redacted').checked = false;
+    loadInvestigations();
+}
+
+function onSearch(q) {
+    const box = document.getElementById('glass-results');
+    if (!q || q.trim().length < 2) { box.classList.remove('open'); box.innerHTML = ''; return; }
+    if (!fuse || !allInvs.length) {
+        const low = q.toLowerCase();
+        const filtered = allInvs.filter(i => (i.title || '').toLowerCase().includes(low) || (i.reference_code || '').toLowerCase().includes(low) || (i.location || '').toLowerCase().includes(low) || (i.involved_parties || '').toLowerCase().includes(low));
+        if (!filtered.length) { box.innerHTML = '<div class="glass-empty">No matches</div>'; box.classList.add('open'); return; }
+        box.innerHTML = filtered.slice(0, 8).map(inv => {
+            const caseNum = inv.reference_code ? `#${fmtCase(inv.reference_code)}` : '#—';
+            return `<div class="glass-item" onclick="window.location.href='/investigation/${inv.id}'"><span class="glass-case">${escHtml(caseNum)}</span><div style="flex:1; min-width:0;"><div class="glass-title">${escHtml(inv.title)}</div><div class="glass-meta">${escHtml(inv.location || 'No location')} • ${escHtml(inv.status)}</div></div></div>`;
+        }).join('');
+        box.classList.add('open');
+        return;
+    }
+    let results = fuse.search(q);
+    if (!results.length) {
+        const low = q.toLowerCase();
+        results = allInvs.filter(i => (i.title || '').toLowerCase().includes(low) || (i.reference_code || '').toLowerCase().includes(low)).map(item => ({ item }));
+    }
+    results = results.slice(0, 8);
+    if (!results.length) { box.innerHTML = '<div class="glass-empty">No matches</div>'; box.classList.add('open'); return; }
+    box.innerHTML = results.map(r => {
+        const inv = r.item || r;
+        const caseNum = inv.reference_code ? `#${fmtCase(inv.reference_code)}` : '#—';
+        return `<div class="glass-item" onclick="window.location.href='/investigation/${inv.id}'"><span class="glass-case">${escHtml(caseNum)}</span><div style="flex:1; min-width:0;"><div class="glass-title">${escHtml(inv.title)}</div><div class="glass-meta">${escHtml(inv.location || 'No location')} • ${escHtml(inv.involved_parties || 'No parties')} • ${escHtml(inv.status)}</div></div></div>`;
+    }).join('');
+    box.classList.add('open');
+}
+
+document.addEventListener('click', e => {
+    const box = document.getElementById('glass-results');
+    const search = document.getElementById('glass-search');
+    if (box && search && !search.contains(e.target)) box.classList.remove('open');
+});
+
+init();
+</script>
+</body>
+</html>

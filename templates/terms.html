@@ -1,0 +1,70 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service | Signaller Web</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'assets/favicon.png' %}">
+    <meta name="theme-color" content="#0f172a">
+</head>
+<body>
+<header>
+    <div class="nav-container">
+        <div class="logo-area">
+            <a href="/login"><img src="{% static 'assets/logo.png' %}" alt="Logo" class="nav-logo"></a>
+            <h1 class="nav-title">Terms of Service</h1>
+        </div>
+        <a href="/login" class="back-btn">&larr; Back to Login</a>
+    </div>
+</header>
+<div class="page-container">
+    <div class="page-content">
+        <h2>Terms of Service</h2>
+        <p class="last-updated">Last updated: 5th September 2026</p>
+        <p>These Terms govern your use of the Signaller Web Investigation System. By accessing this platform you agree to be bound by these terms. This is a private internal system — not a public website.</p>
+        <h3>1. Acceptance of Terms</h3>
+        <p>By logging in you confirm acceptance of these terms. If you do not agree, you must not use the system. There is no public homepage; all pages require authentication.</p>
+        <h3>2. Access &amp; Eligibility</h3>
+        <ul>
+            <li><strong>Restricted Access:</strong> Only <strong>supervisor</strong> and <strong>admin</strong> accounts are permitted. Any role below supervisor may not have an account and will be removed if created. Admin accounts can only be created manually in the database by the owner.</li>
+            <li><strong>Credentials:</strong> Sharing login credentials is prohibited and will result in immediate revocation of access.</li>
+            <li><strong>Account Responsibility:</strong> You are responsible for all activity under your account. Report suspected compromise to an administrator immediately.</li>
+            <li><strong>No Self-Registration:</strong> Accounts are created only by admins via the Admin panel. There is no public sign-up.</li>
+        </ul>
+        <h3>3. Investigations</h3>
+        <ul>
+            <li><strong>Confidentiality:</strong> Investigation records are confidential and contain personal data. Do not share investigation links, PDFs, or details with unauthorised individuals.</li>
+            <li><strong>Accuracy:</strong> You are responsible for the accuracy of information you enter. Intentional falsification or deletion is prohibited and will result in removal.</li>
+            <li><strong>Data Handling:</strong> When downloading or sharing investigation PDFs, you must comply with UK GDPR — store securely, do not post publicly, delete when no longer needed, and never download on shared/public devices.</li>
+            <li><strong>Retention:</strong> Closed investigations are retained for accountability and may be anonymised or deleted after resolution.</li>
+        </ul>
+        <h3>4. Data Protection</h3>
+        <p>This system processes personal data under UK GDPR. By using it you agree to handle personal data as described in our <a href="/privacy">Privacy Policy</a>. Breaches must be reported to the DPO: <a href="mailto:masterovroblox@gmail.com">masterovroblox@gmail.com</a>.</p>
+        <h3>5. Acceptable Use</h3>
+        <ul>
+            <li>Do not attempt to access data or functions beyond your role.</li>
+            <li>Do not use automated tools to scrape or attack the service.</li>
+            <li>Do not upload malicious content.</li>
+        </ul>
+        <h3>6. Intellectual Property</h3>
+        <p>All site content, graphics, logos and software are property of Signaller Web management unless otherwise stated. Do not reproduce or distribute without permission.</p>
+        <h3>7. Termination</h3>
+        <p>Access is a privilege, not a right. Management may revoke access at any time for inactivity, policy violation, or if your role falls below supervisor.</p>
+        <h3>8. Limitation of Liability</h3>
+        <p>Service is provided "as is" without warranty. We are not liable for indirect or consequential damages. Liability is limited to the greatest extent permitted by law.</p>
+        <h3>9. Changes</h3>
+        <p>We may modify these terms at any time. Changes will be posted here with a new date. Continued use after changes constitutes acceptance.</p>
+        <h3>10. Governing Law</h3>
+        <p>These terms are governed by the laws of England and Wales. This does not affect your statutory rights.</p>
+        <h3>11. Contact</h3>
+        <p>Questions about these terms: contact the DPO at <a href="mailto:masterovroblox@gmail.com">masterovroblox@gmail.com</a> or via Signaller Web management.</p>
+    </div>
+</div>
+<footer class="corner-footer">
+    <p>&copy; Signaller Web</p>
+    <a href="/privacy">Privacy Policy</a> | <a href="/terms">Terms</a>
+</footer>
+</body>
+</html>

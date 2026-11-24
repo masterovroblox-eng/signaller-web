@@ -1,0 +1,160 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | Signaller Web</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'assets/favicon.png' %}">
+    <meta name="theme-color" content="#0f172a">
+</head>
+<body class="login-page">
+    <div class="login-container">
+        <img src="{% static 'assets/logo.png' %}" alt="Logo" style="height:60px; margin-bottom:15px; border-radius:10px;">
+        <h2 id="login-title">System Login</h2>
+
+        <div id="error-message"></div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" autocomplete="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="login-btn">Sign In</button>
+        </form>
+
+        <form id="setupPasswordForm" style="display:none; text-align:left;">
+            <p style="margin-bottom:20px; color:#64748b; font-size:14px; line-height:1.5; text-align:center;">
+                This is your first time logging in. Please set a permanent password for your account.
+            </p>
+            <div class="form-group">
+                <label for="new-password">New Permanent Password</label>
+                <input type="password" id="new-password" placeholder="Minimum 6 characters" autocomplete="new-password" required>
+                <div class="strength-bar-wrap"><div class="strength-bar" id="strength-bar"></div></div>
+                <div class="strength-label" id="strength-label" style="color:#94a3b8;">Enter a password</div>
+            </div>
+            <div class="form-group">
+                <label for="confirm-password">Confirm Password</label>
+                <input type="password" id="confirm-password" placeholder="Repeat your password" autocomplete="new-password" required>
+                <div class="strength-label" id="match-label" style="color:#94a3b8; margin-top:4px;"></div>
+            </div>
+            <button type="submit" class="login-btn" style="background-color:#10b981; width:100%;">Save Password &amp; Sign In</button>
+        </form>
+    </div>
+
+    <footer class="corner-footer">
+        <p>&copy; Signaller Web</p>
+        <a href="/privacy">Privacy Policy</a> | <a href="/terms">Terms of Service</a>
+    </footer>
+
+    <script src="{% static 'app.js' %}"></script>
+    <script>
+    // Password strength meter
+    document.addEventListener('DOMContentLoaded', () => {
+        const pwInput = document.getElementById('new-password');
+        const confirmInput = document.getElementById('confirm-password');
+        const bar = document.getElementById('strength-bar');
+        const label = document.getElementById('strength-label');
+        const matchLabel = document.getElementById('match-label');
+
+        if (pwInput) {
+            pwInput.addEventListener('input', () => {
+                const pw = pwInput.value;
+                let score = 0;
+                if (pw.length >= 6)  score++;
+                if (pw.length >= 10) score++;
+                if (/[A-Z]/.test(pw)) score++;
+                if (/[0-9]/.test(pw)) score++;
+                if (/[^A-Za-z0-9]/.test(pw)) score++;
+                const levels = [
+                    { pct: '0%',   color: '#e2e8f0', text: 'Enter a password',  textColor: '#94a3b8' },
+                    { pct: '25%',  color: '#ef4444', text: 'Weak',              textColor: '#ef4444' },
+                    { pct: '50%',  color: '#f59e0b', text: 'Fair',              textColor: '#f59e0b' },
+                    { pct: '75%',  color: '#8b5cf6', text: 'Good',              textColor: '#7c3aed' },
+                    { pct: '90%',  color: '#10b981', text: 'Strong',            textColor: '#10b981' },
+                    { pct: '100%', color: '#4f46e5', text: 'Very Strong',       textColor: '#4f46e5' },
+                ];
+                const l = pw.length === 0 ? levels[0] : levels[Math.min(score, 5)];
+                bar.style.width = l.pct;
+                bar.style.background = l.color;
+                label.textContent = l.text;
+                label.style.color = l.textColor;
+                checkMatch();
+            });
+            confirmInput.addEventListener('input', checkMatch);
+        }
+        function checkMatch() {
+            if (!confirmInput || !confirmInput.value) { if (matchLabel) matchLabel.textContent = ''; return; }
+            if (pwInput.value === confirmInput.value) {
+                matchLabel.textContent = '✓ Passwords match';
+                matchLabel.style.color = '#10b981';
+            } else {
+                matchLabel.textContent = '✗ Passwords do not match';
+                matchLabel.style.color = '#ef4444';
+            }
+        }
+    });
+
+    // Login logic
+    let pendingUsername = null;
+    const loginForm = document.getElementById('loginForm');
+    const setupPasswordForm = document.getElementById('setupPasswordForm');
+    const loginTitle = document.getElementById('login-title');
+
+    function showUiError(message) {
+        const el = document.getElementById('error-message');
+        if (el) { el.textContent = message; el.style.display = 'block'; }
+    }
+    function clearUiError() {
+        const el = document.getElementById('error-message');
+        if (el) { el.style.display = 'none'; el.textContent = ''; }
+    }
+
+    if (loginForm) {
+        loginForm.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            clearUiError();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            if (!username || !password) { showUiError('Please enter your username and password.'); return; }
+            try {
+                const res = await api('/api/login', { method: 'POST', body: { username, password } });
+                if (res.must_change_password) {
+                    pendingUsername = username;
+                    loginForm.style.display = 'none';
+                    if (setupPasswordForm) setupPasswordForm.style.display = 'block';
+                    if (loginTitle) loginTitle.textContent = 'Set Your Password';
+                } else {
+                    window.location.href = '/investigations';
+                }
+            } catch (err) {
+                showUiError(err.message || 'Invalid username or password.');
+            }
+        });
+    }
+
+    if (setupPasswordForm) {
+        setupPasswordForm.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            clearUiError();
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password') ? document.getElementById('confirm-password').value : newPassword;
+            if (newPassword.length < 6) { showUiError('Your new password must be at least 6 characters long.'); return; }
+            if (newPassword !== confirmPassword) { showUiError('Passwords do not match.'); return; }
+            if (newPassword === 'Buses123!') { showUiError('You cannot reuse the temporary password. Choose a new one!'); return; }
+            try {
+                await api('/api/set-password', { method: 'POST', body: { new_password: newPassword } });
+                window.location.href = '/investigations';
+            } catch (err) {
+                showUiError(err.message || 'Could not save new password.');
+            }
+        });
+    }
+    </script>
+</body>
+</html>

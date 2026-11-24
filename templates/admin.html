@@ -1,0 +1,240 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin | Signaller Web</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'assets/favicon.png' %}">
+    <meta name="theme-color" content="#0f172a">
+    <style>
+        body { background: #f1f5f9; }
+    </style>
+</head>
+<body>
+<header>
+    <div class="nav-container">
+        <h1 style="color:#fff; font-size:1.2rem; font-weight:700;">Admin Portal</h1>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button onclick="window.location.href='/investigations'" class="login-btn" style="background:#06b6d4;">Investigations</button>
+            <button onclick="logout()" class="login-btn" style="background:#ef4444;">Logout</button>
+        </div>
+    </div>
+</header>
+
+<div class="dash-main">
+    <section class="dash-section">
+        <h2>Staff &amp; User Management</h2>
+        <div class="form-box">
+            <h3>Add New Supervisor</h3>
+            <div class="form-row">
+                <input type="text" id="new_username" placeholder="Username" onkeydown="if(event.key==='Enter')saveUser()">
+                <button class="btn btn-success" onclick="saveUser()">Add Supervisor</button>
+            </div>
+            <p class="hint">Roles below supervisor (signaller, etc.) cannot have an account — do not create them.</p>
+        </div>
+        <table>
+            <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="dashboard-user-table"><tr><td colspan="4" style="color:#94a3b8;text-align:center;padding:20px;">Loading…</td></tr></tbody>
+        </table>
+    </section>
+</div>
+
+<!-- Modals -->
+<div class="modal-overlay" id="reset-modal" style="display:none;">
+    <div class="modal">
+        <h3>Reset Password</h3>
+        <p id="reset-modal-subtitle"></p>
+        <p style="color:#64748b;">A random temporary password will be generated. User will be logged out and must set a new password on next login.</p>
+        <div class="modal-error" id="reset-modal-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeModal('reset-modal')">Cancel</button>
+            <button class="btn btn-warning" onclick="confirmReset()">Generate &amp; Reset</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="rename-modal" style="display:none;">
+    <div class="modal">
+        <h3>Rename User</h3>
+        <p id="rename-modal-subtitle"></p>
+        <label class="modal-label" for="rename-new-username">New Username</label>
+        <input type="text" id="rename-new-username" placeholder="Enter new username" onkeydown="if(event.key==='Enter')confirmRename()">
+        <div class="modal-error" id="rename-modal-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeModal('rename-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="confirmRename()">Rename</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="created-modal" style="display:none;">
+    <div class="modal" style="max-width:520px;">
+        <h3 id="created-modal-title">Supervisor Created</h3>
+        <p>Send these details to the user (temp password is 5 digits, random every account):</p>
+        <div class="info-box" id="created-info"></div>
+        <div style="display:flex; gap:8px; margin-top:12px;">
+            <button class="btn btn-primary" style="flex:1;" onclick="copyCreated()">Copy</button>
+            <button class="btn btn-ghost" style="flex:1;" onclick="closeModal('created-modal')">Close</button>
+        </div>
+        <p class="hint" style="margin-top:10px;">They must set a new password on first login at <span id="created-site"></span></p>
+    </div>
+</div>
+
+<footer class="corner-footer">
+    <p>&copy; Signaller Web</p>
+    <a href="/privacy">Privacy Policy</a> | <a href="/terms">Terms of Service</a>
+</footer>
+
+<script src="{% static 'app.js' %}"></script>
+<script>
+let currentUser = null;
+let cachedStaff = [];
+let pendingResetUsername = null;
+let pendingRenameOldName = null;
+let lastCreatedText = '';
+
+function openModal(id){ const el = document.getElementById(id); if (el) { el.style.display = 'flex'; el.classList.add('open'); } }
+function closeModal(id){ const el = document.getElementById(id); if (el) { el.style.display = 'none'; el.classList.remove('open'); } }
+function escAttr(s){ return String(s ?? '').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+function displayRole(r){
+    if (r === 'admin') return 'admin';
+    if (r === 'staff') return 'supervisor';
+    if (r === 'controller') return 'controller';
+    return r;
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    currentUser = await requireAdmin();
+    if (!currentUser) return;
+    loadUsersDashboard();
+});
+
+async function loadUsersDashboard() {
+    try {
+        const data = await api('/api/admin/staff');
+        cachedStaff = Array.isArray(data) ? data : [];
+        renderUserTable();
+    } catch (err) {
+        console.error(err);
+        alert('Error loading users: ' + err.message);
+    }
+}
+
+function renderUserTable() {
+    const tbody = document.getElementById('dashboard-user-table');
+    tbody.innerHTML = '';
+    if (!cachedStaff.length) { tbody.innerHTML = '<tr><td colspan="4" style="color:#94a3b8;text-align:center;padding:20px;">No accounts.</td></tr>'; return; }
+    cachedStaff.forEach(user => {
+        const isLocked = user.is_locked;
+        const pwBadge = isLocked ? '<span class="badge badge-disabled">Disabled</span>' : (user.must_change_password ? '<span class="badge badge-pending">Password reset pending</span>' : '<span class="badge badge-active">Active</span>');
+        const roleLabel = displayRole(user.role);
+        const lockBtn = isLocked
+            ? `<button class="btn btn-success btn-sm" onclick="toggleLock('${escAttr(user.username)}', false)">Enable</button>`
+            : `<button class="btn btn-ghost btn-sm" onclick="toggleLock('${escAttr(user.username)}', true)">Disable</button>`;
+        tbody.innerHTML += `<tr>
+            <td data-label="Username"><strong>${escHtml(user.username)}</strong></td>
+            <td data-label="Role">${escHtml(roleLabel)}</td>
+            <td data-label="Status">${pwBadge}</td>
+            <td class="actions-cell">
+                <button class="btn btn-primary btn-sm" onclick="openRenameModal('${escAttr(user.username)}')">Rename</button>
+                <button class="btn btn-warning btn-sm" onclick="openResetModal('${escAttr(user.username)}')">Reset PW</button>
+                ${lockBtn}
+                <button class="btn btn-danger btn-sm" onclick="deleteUser('${escAttr(user.username)}')">Delete</button>
+            </td></tr>`;
+    });
+}
+
+async function saveUser() {
+    const username = document.getElementById('new_username').value.trim();
+    if (!username) { alert('Enter username'); return; }
+    try {
+        const r = await api('/api/admin/staff', { method: 'POST', body: { username } });
+        const site = window.location.origin;
+        lastCreatedText = `Site: ${site}\nUsername: ${r.out_username}\nTemp password: ${r.out_temp_password}`;
+        document.getElementById('created-info').innerHTML = `Site: <strong>${escHtml(site)}</strong><br>Username: <strong>${escHtml(r.out_username)}</strong><br>Temp password: <strong style="font-size:1.3rem; letter-spacing:2px;">${escHtml(r.out_temp_password)}</strong>`;
+        document.getElementById('created-site').textContent = site;
+        document.getElementById('created-modal-title').textContent = 'Supervisor Created';
+        openModal('created-modal');
+        document.getElementById('new_username').value = '';
+        await loadUsersDashboard();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+function copyCreated() {
+    if (navigator.clipboard) navigator.clipboard.writeText(lastCreatedText);
+    else { const t = document.createElement('textarea'); t.value = lastCreatedText; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+    alert('Copied!');
+}
+
+async function deleteUser(username) {
+    if (!confirm('Delete ' + username + '?')) return;
+    try {
+        await api('/api/admin/staff/' + encodeURIComponent(username), { method: 'DELETE' });
+        await loadUsersDashboard();
+    } catch (err) { alert('Error: ' + err.message); }
+}
+
+function openResetModal(username) {
+    pendingResetUsername = username;
+    document.getElementById('reset-modal-subtitle').textContent = 'Resetting: ' + username;
+    document.getElementById('reset-modal-error').style.display = 'none';
+    openModal('reset-modal');
+}
+async function confirmReset() {
+    const errEl = document.getElementById('reset-modal-error');
+    errEl.style.display = 'none';
+    try {
+        const r = await api('/api/admin/staff/' + encodeURIComponent(pendingResetUsername) + '/reset-password', { method: 'POST' });
+        closeModal('reset-modal');
+        const site = window.location.origin;
+        lastCreatedText = `Site: ${site}\nUsername: ${r.out_username}\nTemp password: ${r.out_temp_password}`;
+        document.getElementById('created-info').innerHTML = `Site: <strong>${escHtml(site)}</strong><br>Username: <strong>${escHtml(r.out_username)}</strong><br>Temp password: <strong style="font-size:1.3rem; letter-spacing:2px;">${escHtml(r.out_temp_password)}</strong>`;
+        document.getElementById('created-site').textContent = site;
+        document.getElementById('created-modal-title').textContent = 'Password Reset';
+        openModal('created-modal');
+        await loadUsersDashboard();
+    } catch (err) {
+        errEl.textContent = 'Error: ' + err.message;
+        errEl.style.display = 'block';
+    }
+}
+
+function openRenameModal(username) {
+    pendingRenameOldName = username;
+    document.getElementById('rename-modal-subtitle').textContent = 'Current: ' + username;
+    document.getElementById('rename-new-username').value = '';
+    document.getElementById('rename-modal-error').style.display = 'none';
+    openModal('rename-modal');
+}
+async function confirmRename() {
+    const newUsername = document.getElementById('rename-new-username').value.trim();
+    const errEl = document.getElementById('rename-modal-error');
+    errEl.style.display = 'none';
+    if (!newUsername) { errEl.textContent = 'Enter new username'; errEl.style.display = 'block'; return; }
+    try {
+        await api('/api/admin/staff/' + encodeURIComponent(pendingRenameOldName) + '/rename', { method: 'POST', body: { new_username: newUsername } });
+        closeModal('rename-modal');
+        await loadUsersDashboard();
+    } catch (err) {
+        errEl.textContent = 'Error: ' + err.message;
+        errEl.style.display = 'block';
+    }
+}
+
+async function toggleLock(username, shouldLock) {
+    const action = shouldLock ? 'Disable' : 'Enable';
+    if (!confirm(action + ' account ' + username + '?' + (shouldLock ? '\nThey will be logged out and cannot log in until enabled.' : ''))) return;
+    try {
+        await api('/api/admin/staff/' + encodeURIComponent(username) + '/lock', { method: 'POST', body: { locked: shouldLock } });
+        await loadUsersDashboard();
+    } catch (err) {
+        alert('Error: ' + err.message + (err.message.includes('owner') ? '\nOnly the system owner can disable accounts.' : ''));
+    }
+}
+</script>
+</body>
+</html>

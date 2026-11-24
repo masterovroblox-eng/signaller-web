@@ -1,0 +1,438 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investigation | Signaller Web</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'assets/favicon.png' %}">
+    <meta name="theme-color" content="#0f172a">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body { background: #f1f5f9; }
+    </style>
+</head>
+<body>
+<header>
+    <div class="nav-container">
+        <div class="logo-area">
+            <img class="nav-logo" src="{% static 'assets/logo.png' %}" alt="Signaller Web">
+            <span class="nav-title">Investigation Details</span>
+        </div>
+        <div class="nav-buttons-wrapper">
+            <button onclick="window.location.href='/investigations'" class="login-btn" style="background:#64748b;">← All Investigations</button>
+            <button onclick="logout()" class="login-btn" style="background:#ef4444;">Logout</button>
+        </div>
+    </div>
+</header>
+
+<div class="inv-main">
+    <div class="inv-loading" id="inv-loading">Loading…</div>
+    <div class="inv-card" id="inv-card" style="display:none;">
+        <h2>
+            <span id="inv-status-badge"></span>
+            <span id="inv-title-display"></span>
+        </h2>
+        <div class="meta-row" id="meta-row"></div>
+        <div id="inv-fields"></div>
+        <div class="action-bar" id="action-bar"></div>
+    </div>
+</div>
+
+<footer class="corner-footer">
+    <p>&copy; Signaller Web</p>
+    <a href="/privacy">Privacy Policy</a> | <a href="/terms">Terms of Service</a>
+</footer>
+
+<script src="{% static 'app.js' %}"></script>
+<script>
+let currentUser = null;
+let invData = null;
+let isEditing = false;
+let sigDrawn = false;
+
+async function init() {
+    currentUser = await requireAuth();
+    if (!currentUser) return;
+    if (currentUser.role !== 'admin' && currentUser.role !== 'staff' && currentUser.role !== 'controller') {
+        window.location.href = '/login'; return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    let id = params.get('id');
+    if (!id) {
+        const segments = window.location.pathname.split('/').filter(Boolean);
+        id = segments.length ? segments[segments.length - 1] : null;
+    }
+    if (!id) {
+        document.getElementById('inv-loading').textContent = 'No investigation ID provided.';
+        return;
+    }
+    await loadInvestigation(id);
+}
+
+async function loadInvestigation(id) {
+    document.getElementById('inv-loading').style.display = 'block';
+    document.getElementById('inv-card').style.display = 'none';
+    try {
+        const data = await api('/api/investigations/' + id);
+        invData = data;
+        if (invData.is_redacted && currentUser.role !== 'admin') {
+            document.getElementById('inv-loading').textContent = '🔒 This investigation is redacted — admin only.';
+            document.getElementById('inv-loading').style.display = 'block';
+            return;
+        }
+        document.getElementById('inv-loading').style.display = 'none';
+        document.getElementById('inv-card').style.display = 'block';
+        renderView();
+    } catch (err) {
+        document.getElementById('inv-loading').textContent = '⚠ Error: ' + err.message;
+    }
+}
+
+function renderView() {
+    const inv = invData;
+    const isOpen = inv.status === 'open';
+    const isAdmin = currentUser.role === 'admin';
+    const card = document.getElementById('inv-card');
+    card.classList.toggle('editing', isEditing);
+    document.getElementById('inv-status-badge').outerHTML = `<span id="inv-status-badge" class="badge ${isOpen ? 'badge-open' : 'badge-closed'}">${escHtml(inv.status.toUpperCase())}</span>`;
+    const caseNum = inv.reference_code ? `<span class="case-badge">#${escHtml(fmtCase(inv.reference_code))}</span>` : '';
+    const redactedBadge = inv.is_redacted ? '<span class="badge badge-redacted">REDACTED</span>' : '';
+    document.getElementById('inv-title-display').innerHTML = escHtml(inv.title) + ' ' + caseNum + ' ' + redactedBadge;
+    const created = new Date(inv.created_at).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const updated = inv.updated_at ? new Date(inv.updated_at).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+    const closed = inv.closed_at ? new Date(inv.closed_at).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+    document.getElementById('meta-row').innerHTML = `
+        ${inv.reference_code ? `<span>Case <strong>#${escHtml(fmtCase(inv.reference_code))}</strong></span>` : ''}
+        <span>Opened by <strong>${escHtml(inv.opened_by)}</strong> on ${created}</span>
+        <span>Last updated ${updated}</span>
+        ${inv.closed_by ? `<span>Closed by <strong>${escHtml(inv.closed_by)}</strong> on ${closed}</span>` : ''}
+        ${inv.offender_rank ? `<span>Rank: <strong>${escHtml(inv.offender_rank)}</strong></span>` : ''}
+    `;
+    const witnessArr = inv.witness_statements ? (Array.isArray(inv.witness_statements) ? inv.witness_statements : []) : [];
+    let witnessView = 'No witness statements';
+    if (witnessArr.length) {
+        witnessView = witnessArr.map((w, i) => w.name ? `<a href="${w.data || '#'}" download="${escHtml(w.name)}">${escHtml(w.name)}</a>` : escHtml(w)).join('<br>');
+    }
+    const sigView = inv.approving_signature ? `<img src="${inv.approving_signature}" style="max-width:280px; border:1px solid #e2e8f0; border-radius:8px; background:#fff; padding:6px;">` : '<span class="field-value empty">No signature</span>';
+
+    const fields = [
+        { label: 'Incident Date', id: 'incident_date', value: inv.incident_date ? new Date(inv.incident_date + 'T00:00:00').toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }) : null, type: 'date' },
+        { label: 'Location', id: 'location', value: inv.location, type: 'text' },
+        { label: 'Involved Parties', id: 'involved_parties', value: inv.involved_parties, type: 'text' },
+        { label: 'Rank of Offender', id: 'offender_rank', value: inv.offender_rank, type: 'text' },
+        { label: 'Previous History', id: 'previous_history', value: inv.previous_history, type: 'textarea' },
+        { label: 'Description', id: 'description', value: inv.description, type: 'textarea' },
+        { label: 'Mitigating Circumstances', id: 'mitigating_circumstances', value: inv.mitigating_circumstances, type: 'textarea' },
+        { label: 'Aggravating Circumstances', id: 'aggravating_circumstances', value: inv.aggravating_circumstances, type: 'textarea' },
+        { label: 'Witness Statements (up to 3 PDFs)', id: 'witness_statements', value: witnessView, type: 'witness', isHtml: true },
+        { label: 'Outcome', id: 'outcome', value: inv.outcome, type: 'textarea' },
+        { label: 'Findings', id: 'findings', value: inv.findings, type: 'textarea' },
+        { label: 'Recommendations', id: 'recommendations', value: inv.recommendations, type: 'textarea' },
+        { label: 'Approving Manager Signature', id: 'approving_signature', value: sigView, type: 'signature', isHtml: true },
+    ];
+    if (isAdmin) {
+        fields.push({ label: 'Investigators', id: 'investigators', value: inv.investigators, type: 'textarea', secret: true });
+        fields.push({ label: 'Redacted Mode', id: 'is_redacted', value: inv.is_redacted ? 'Yes' : 'No', type: 'checkbox', secret: true });
+    }
+
+    let html = '';
+    fields.forEach(f => {
+        if (f.secret && !isAdmin) return;
+        const viewVal = f.isHtml ? f.value : (f.value ? escHtml(String(f.value)) : '<span class="field-value empty">Not recorded</span>');
+        html += `<div class="field-group">
+            <div class="field-label">${f.label}</div>
+            <div class="view-field field-value">${f.isHtml ? f.value : viewVal}</div>
+            <div class="inline-field">${makeFieldInput(f)}</div>
+        </div>`;
+    });
+    document.getElementById('inv-fields').innerHTML = html;
+    if (isEditing) initSignaturePad();
+
+    const bar = document.getElementById('action-bar');
+    if (isEditing) {
+        bar.innerHTML = `
+            <button class="btn btn-ghost" onclick="cancelEdit()">Cancel</button>
+            <button class="btn btn-success" onclick="saveInvestigation()">💾 Save Changes</button>
+        `;
+    } else {
+        bar.innerHTML = `
+            <button class="btn btn-primary" onclick="enableEdit()">✏️ Edit</button>
+            <button class="btn btn-ghost" style="background:#0f172a;color:#fff;" onclick="downloadPDF('reporter')">⬇ Reporter Copy</button>
+            <button class="btn btn-ghost" style="background:#334155;color:#fff;" onclick="downloadPDF('subject')">⬇ Subject Copy</button>
+            <button class="btn btn-primary" style="background:#4f46e5;border:2px solid #a5b4fc;" onclick="downloadPDF('full')">⬇ Full PDF</button>
+            ${isOpen ? `<button class="btn btn-warning" onclick="closeInvestigation()">🔒 Close</button>` : `<button class="btn btn-success" onclick="reopenInvestigation()">🔓 Reopen</button>`}
+        `;
+    }
+}
+
+function makeFieldInput(f) {
+    if (f.id === 'is_redacted') {
+        const checked = invData.is_redacted ? 'checked' : '';
+        return `<label style="display:flex; gap:8px; align-items:center; font-weight:600;"><input type="checkbox" id="edit-is_redacted" ${checked} style="width:auto;"> Redacted</label>`;
+    }
+    if (f.id === 'investigators') {
+        const val = escHtml(invData.investigators || '');
+        return `<textarea id="edit-investigators" maxlength="2000" placeholder="Admin-only investigators">${val}</textarea>`;
+    }
+    if (f.type === 'witness') {
+        return `<input type="file" id="edit-witness-0" accept="application/pdf" style="margin-bottom:6px;"><input type="file" id="edit-witness-1" accept="application/pdf" style="margin-bottom:6px;"><input type="file" id="edit-witness-2" accept="application/pdf"><div class="hint">Up to 3 PDFs. Leave empty to keep existing.</div>`;
+    }
+    if (f.type === 'signature') {
+        return `<div class="sig-wrap"><canvas id="sig-canvas" class="sig-canvas" width="500" height="150"></canvas><div style="display:flex; gap:8px; margin-top:6px;"><button type="button" class="btn btn-ghost btn-sm" onclick="clearSig()">Clear</button><span style="font-size:.8em; color:#64748b;">Draw approving manager signature</span></div></div>`;
+    }
+    if (f.type === 'date') {
+        const val = invData[f.id] || '';
+        return `<input type="date" id="edit-${f.id}" value="${val}">`;
+    }
+    if (f.type === 'textarea') {
+        const val = escHtml(invData[f.id] || '');
+        return `<textarea id="edit-${f.id}" maxlength="5000">${val}</textarea>`;
+    }
+    const val = escHtml(invData[f.id] || '');
+    return `<input id="edit-${f.id}" value="${val}">`;
+}
+
+// Fix makeFieldInput textarea mapping: use invData directly by id for most
+// (above already uses invData[f.id])
+
+function initSignaturePad() {
+    const canvas = document.getElementById('sig-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    if (invData.approving_signature) {
+        const img = new Image(); img.onload = () => { ctx.drawImage(img, 0, 0); sigDrawn = true; }; img.src = invData.approving_signature;
+    }
+    let drawing = false;
+    const pos = (e) => {
+        const r = canvas.getBoundingClientRect();
+        const t = e.touches ? e.touches[0] : e;
+        return { x: (t.clientX - r.left) * (canvas.width / r.width), y: (t.clientY - r.top) * (canvas.height / r.height) };
+    };
+    const start = (e) => { drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); e.preventDefault(); };
+    const move = (e) => { if (!drawing) return; const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); sigDrawn = true; e.preventDefault(); };
+    const stop = () => { drawing = false; };
+    canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); window.addEventListener('mouseup', stop);
+    canvas.addEventListener('touchstart', start, { passive: false }); canvas.addEventListener('touchmove', move, { passive: false }); window.addEventListener('touchend', stop);
+}
+function clearSig() {
+    const c = document.getElementById('sig-canvas');
+    if (!c) return;
+    c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    sigDrawn = false;
+}
+
+function enableEdit() { isEditing = true; document.getElementById('inv-card').classList.add('editing'); renderView(); }
+function cancelEdit() { isEditing = false; document.getElementById('inv-card').classList.remove('editing'); renderView(); }
+
+async function saveInvestigation() {
+    const getVal = (id) => document.getElementById(`edit-${id}`)?.value || '';
+    const vals = {
+        title: getVal('title') || invData.title,
+        incident_date: getVal('incident_date') || null,
+        location: getVal('location').trim(),
+        involved_parties: getVal('involved_parties').trim(),
+        offender_rank: getVal('offender_rank').trim(),
+        previous_history: getVal('previous_history').trim(),
+        description: getVal('description').trim(),
+        mitigating: getVal('mitigating_circumstances').trim(),
+        aggravating: getVal('aggravating_circumstances').trim(),
+        outcome: getVal('outcome').trim(),
+        findings: getVal('findings').trim(),
+        recommendations: getVal('recommendations').trim(),
+        investigators: document.getElementById('edit-investigators')?.value.trim() || invData.investigators || null,
+        redacted: document.getElementById('edit-is_redacted')?.checked || false,
+    };
+    if (!vals.title || !vals.title.trim()) { alert('Title is required.'); return; }
+    let witnessArr = invData.witness_statements || [];
+    const files = [];
+    for (let i = 0; i < 3; i++) {
+        const inp = document.getElementById(`edit-witness-${i}`);
+        if (inp && inp.files && inp.files[0]) files.push(inp.files[0]);
+    }
+    if (files.length) {
+        const newWitness = [];
+        for (const f of files) {
+            const data = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
+            newWitness.push({ name: f.name, data });
+        }
+        witnessArr = newWitness;
+        if (witnessArr.length > 3) witnessArr = witnessArr.slice(0, 3);
+    }
+    let sigData = invData.approving_signature;
+    const canvas = document.getElementById('sig-canvas');
+    if (canvas && sigDrawn) sigData = canvas.toDataURL('image/png');
+
+    const body = {
+        title: vals.title.trim(),
+        incident_date: vals.incident_date || null,
+        location: vals.location,
+        involved_parties: vals.involved_parties,
+        description: vals.description,
+        outcome: vals.outcome,
+        findings: vals.findings,
+        recommendations: vals.recommendations,
+        mitigating: vals.mitigating,
+        aggravating: vals.aggravating,
+        witness: witnessArr,
+        signature: sigData,
+        rank: vals.offender_rank,
+        history: vals.previous_history,
+    };
+    if (currentUser.role === 'admin') {
+        body.investigators = vals.investigators;
+        body.redacted = vals.redacted;
+    }
+    try {
+        await api('/api/investigations/' + invData.id, { method: 'POST', body });
+    } catch (err) {
+        alert('Error: ' + err.message); return;
+    }
+    isEditing = false;
+    await loadInvestigation(invData.id);
+}
+
+async function closeInvestigation() {
+    if (!confirm(`Close investigation "${invData.title}"?`)) return;
+    try {
+        await api('/api/investigations/' + invData.id + '/close', { method: 'POST' });
+        await loadInvestigation(invData.id);
+    } catch (err) { alert('Error: ' + err.message); }
+}
+async function reopenInvestigation() {
+    if (!confirm(`Reopen investigation "${invData.title}"?`)) return;
+    try {
+        await api('/api/investigations/' + invData.id + '/reopen', { method: 'POST' });
+        await loadInvestigation(invData.id);
+    } catch (err) { alert('Error: ' + err.message); }
+}
+
+async function downloadPDF(copyType) {
+    if (!(await confirmDataExport())) return;
+    if (!invData) return;
+    if (invData.is_redacted && currentUser.role !== 'admin' && copyType !== 'subject') { alert('This investigation is redacted.'); return; }
+    const r = invData;
+    const isFull = copyType === 'full';
+    const isReporter = copyType === 'reporter';
+    const isAdmin = currentUser.role === 'admin';
+    if ((copyType === 'full' || r.is_redacted) && !isAdmin) { alert('Only admins can download this copy.'); return; }
+    const copyLabel = isFull ? 'FULL COPY' : (isReporter ? 'REPORTER COPY' : 'SUBJECT COPY');
+    const subtitle = isFull ? 'Full Copy — Complete Record (All Details)' : (isReporter ? 'Reporter Copy — Confidential' : 'Subject Copy — For Subject Viewing');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const brandDark = [15, 23, 42];
+    const brandPrimary = [79, 70, 229];
+    const white = [255, 255, 255];
+    const darkText = [60, 60, 60];
+    const pageW = 210; const margin = 14; const contentW = pageW - margin * 2;
+    doc.setFillColor(...brandDark); doc.rect(0, 0, pageW, 28, 'F');
+    doc.setFillColor(...brandPrimary); doc.rect(0, 28, pageW, 2, 'F');
+    doc.setTextColor(...white); doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.text('Signaller Web', margin, 12);
+    doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.text(copyLabel, pageW - margin, 12, { align: 'right' });
+    doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.text(subtitle, margin, 20);
+    if (r.reference_code) { doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...brandPrimary); doc.text(`Case #${fmtCase(r.reference_code)}`, pageW - margin, 20, { align: 'right' }); doc.setTextColor(...white); }
+    let y = 42;
+    const isOpen = r.status === 'open';
+    doc.setFillColor(...(isOpen ? brandPrimary : [16, 185, 129])); doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...white);
+    const statusW = doc.getTextWidth(r.status.toUpperCase()) + 8; doc.roundedRect(margin, y - 4, statusW, 7, 2, 2, 'F'); doc.text(r.status.toUpperCase(), margin + 4, y + 1); y += 10;
+    if (r.is_redacted) { doc.setFillColor(254, 226, 226); doc.setTextColor(153, 27, 27); doc.setFontSize(8); const rw = doc.getTextWidth('REDACTED') + 8; doc.roundedRect(margin + statusW + 6, y - 4, rw, 7, 2, 2, 'F'); doc.text('REDACTED', margin + statusW + 10, y + 1); }
+    doc.setTextColor(...brandDark); doc.setFontSize(18); doc.setFont('helvetica', 'bold'); doc.text(r.title, margin, y); y += 10;
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100);
+    const incDate = r.incident_date ? new Date(r.incident_date + 'T00:00:00').toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }) : 'Not specified';
+    let metaLine = `Incident: ${incDate}  |  Location: ${r.location || 'Not specified'}  |  Opened by: ${r.opened_by}`;
+    if (r.offender_rank) metaLine += `  |  Rank: ${r.offender_rank}`;
+    doc.text(metaLine, margin, y); y += 8;
+    if (r.is_redacted) { doc.setFontSize(7); doc.setTextColor(180, 50, 50); doc.text('REDACTED — admin only viewing', margin, y); y += 6; }
+
+    let sections;
+    if (!isReporter && !isFull) {
+        sections = [
+            { title: 'DESCRIPTION (Personal Data Relating to You)', key: 'description', fallback: 'No description recorded.' },
+            { title: 'OUTCOME', key: 'outcome', fallback: 'No outcome recorded.' },
+            { title: 'MITIGATING CIRCUMSTANCES', key: 'mitigating_circumstances', fallback: 'None recorded.' },
+            { title: 'AGGRAVATING CIRCUMSTANCES', key: 'aggravating_circumstances', fallback: 'None recorded.' },
+        ];
+        if (y > 240) { doc.addPage(); y = 30; }
+        doc.setFillColor(255, 255, 255); doc.setDrawColor(...brandPrimary); doc.roundedRect(margin, y, contentW, 14, 2, 2, 'F');
+        doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(80, 80, 80);
+        const gdprNote = doc.splitTextToSize('GDPR Subject Access Copy — This copy contains only personal data relating to you (UK GDPR Article 15). Data about other individuals has been minimised. To request full access or rectification, contact DPO: masterovroblox@gmail.com', contentW - 6);
+        doc.text(gdprNote, margin + 3, y + 5); y += 18;
+    } else if (isReporter) {
+        sections = [
+            { title: 'INVOLVED PARTIES', key: 'involved_parties', fallback: 'None recorded.' },
+            { title: 'RANK OF OFFENDER', key: 'offender_rank', fallback: 'Not recorded.' },
+            { title: 'PREVIOUS HISTORY', key: 'previous_history', fallback: 'None recorded.' },
+            { title: 'DESCRIPTION', key: 'description', fallback: 'No description recorded.' },
+            { title: 'MITIGATING CIRCUMSTANCES', key: 'mitigating_circumstances', fallback: 'None recorded.' },
+            { title: 'AGGRAVATING CIRCUMSTANCES', key: 'aggravating_circumstances', fallback: 'None recorded.' },
+            { title: 'WITNESS STATEMENTS', key: 'witness_statements', fallback: 'No witness statements.', isWitness: true },
+            { title: 'OUTCOME', key: 'outcome', fallback: 'No outcome recorded.' },
+            { title: 'FINDINGS', key: 'findings', fallback: 'No findings recorded yet.' },
+            { title: 'RECOMMENDATIONS', key: 'recommendations', fallback: 'No recommendations recorded yet.' },
+        ];
+    } else {
+        sections = [
+            { title: 'INVOLVED PARTIES (Full)', key: 'involved_parties', fallback: 'None recorded.' },
+            { title: 'RANK OF OFFENDER', key: 'offender_rank', fallback: 'Not recorded.' },
+            { title: 'PREVIOUS HISTORY', key: 'previous_history', fallback: 'None recorded.' },
+            { title: 'DESCRIPTION', key: 'description', fallback: 'No description recorded.' },
+            { title: 'MITIGATING CIRCUMSTANCES', key: 'mitigating_circumstances', fallback: 'None recorded.' },
+            { title: 'AGGRAVATING CIRCUMSTANCES', key: 'aggravating_circumstances', fallback: 'None recorded.' },
+            { title: 'WITNESS STATEMENTS (Full)', key: 'witness_statements', fallback: 'No witness statements.', isWitness: true },
+            { title: 'OUTCOME', key: 'outcome', fallback: 'No outcome recorded.' },
+            { title: 'FINDINGS (Full)', key: 'findings', fallback: 'No findings recorded yet.' },
+            { title: 'RECOMMENDATIONS (Full)', key: 'recommendations', fallback: 'No recommendations recorded yet.' },
+            { title: 'Investigators', key: 'investigators', fallback: 'Not recorded.', secret: true },
+        ];
+    }
+
+    sections.forEach(sec => {
+        if (sec.secret && !isAdmin) return;
+        if (y > 255) { doc.addPage(); y = 30; }
+        doc.setFillColor(...brandDark); doc.rect(margin, y, contentW, 7, 'F');
+        doc.setTextColor(...white); doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.text(sec.title, margin + 4, y + 5); y += 12;
+        let text = r[sec.key] || sec.fallback;
+        if (sec.isWitness) {
+            const arr = r.witness_statements || [];
+            if (arr.length) text = arr.map((w, i) => `${i + 1}. ${w.name || w}`).join('\n');
+            else text = sec.fallback;
+        }
+        doc.setTextColor(...darkText); doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+        const lines = doc.splitTextToSize(text, contentW - 4);
+        doc.text(lines, margin + 2, y); y += lines.length * 5 + 6;
+    });
+
+    if (r.approving_signature && (isFull || isReporter)) {
+        if (y > 240) { doc.addPage(); y = 30; }
+        doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(...brandDark);
+        doc.text('APPROVING MANAGER SIGNATURE', margin, y); y += 6;
+        try { doc.addImage(r.approving_signature, 'PNG', margin, y, 60, 18); y += 24; } catch (e) { doc.setFontSize(8); doc.text('Signature on file', margin, y); y += 8; }
+    }
+
+    if (r.closed_at) {
+        if (y > 270) { doc.addPage(); y = 30; }
+        doc.setDrawColor(...brandDark); doc.setFillColor(245, 245, 245); doc.roundedRect(margin, y, contentW, 10, 2, 2, 'F');
+        doc.setTextColor(100, 100, 100); doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+        const closedDate = new Date(r.closed_at).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
+        doc.text(`Investigation closed by ${r.closed_by} on ${closedDate}`, margin + 4, y + 6); y += 16;
+    }
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i); doc.setFillColor(...brandDark); doc.rect(0, 287, pageW, 10, 'F');
+        doc.setTextColor(...white); doc.setFontSize(7); doc.text(`Signaller Web — ${subtitle}`, margin, 293); doc.text(`Page ${i} of ${pageCount}`, pageW - margin, 293, { align: 'right' });
+    }
+    doc.setFontSize(8); doc.setTextColor(180, 50, 50);
+    const footerNote = isFull ? 'FULL COPY — complete record — contains all personal data' : (isReporter ? 'CONFIDENTIAL — reporter copy — contains personal data' : 'SUBJECT COPY — for subject viewing');
+    doc.text(footerNote, doc.internal.pageSize.width / 2, doc.internal.pageSize.height - 10, { align: 'center' });
+    const casePart = r.reference_code ? fmtCase(r.reference_code) : r.title.replace(/[^a-z0-9]/gi, '_').slice(0, 20);
+    const prefix = isFull ? 'Full' : (isReporter ? 'Reporter' : 'Subject');
+    doc.save(`investigation-${casePart}-${prefix}.pdf`);
+}
+
+init();
+</script>
+</body>
+</html>
