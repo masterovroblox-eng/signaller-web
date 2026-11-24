@@ -21,7 +21,7 @@ class StaffManager(BaseUserManager):
         extra_fields.setdefault('role', 'admin')
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
-        extra_fields.setdefault('must_change_password', False)
+        extra_fields.setdefault('must_change_password', True)
         return self.create_user(username, password, **extra_fields)
 
 
