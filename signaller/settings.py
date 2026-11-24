@@ -6,7 +6,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-signaller-web-dev-key-change-me')
 DEBUG = os.environ.get('DEBUG', 'False').lower() in ('1', 'true', 'yes')
-ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver,sc-north-scotland.cc').split(',') if h.strip()]
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver,sc-north-scotland.cc,.onrender.com').split(',') if h.strip()]
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', 'https://*.onrender.com').split(',') if o.strip()]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
