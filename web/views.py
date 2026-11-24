@@ -12,6 +12,23 @@ from django.utils import timezone
 from .models import Staff, Investigation, AuditLog, DiscordWebhook
 
 
+import os
+
+
+def _ensure_admin():
+    try:
+        from web.models import Staff
+        if Staff.objects.filter(role='admin').exists():
+            return
+        username = os.environ.get('DJANGO_SUPERUSER_USERNAME', 'admin')
+        password = os.environ.get('DJANGO_SUPERUSER_PASSWORD', 'ChangeMe123!')
+        user = Staff(username=username, role='admin', must_change_password=True, is_staff=True, is_superuser=True)
+        user.set_password(password)
+        user.save()
+    except Exception:
+        pass
+
+
 def _json(request):
     try:
         return json.loads(request.body.decode('utf-8') or '{}')
@@ -172,6 +189,7 @@ def api_me(request):
 def api_login(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
+    _ensure_admin()
     data = _json(request)
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
