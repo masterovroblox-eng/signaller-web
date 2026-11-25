@@ -133,7 +133,7 @@ class WriteUp(models.Model):
     STATUS_CHOICES = [('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')]
     signaller = models.CharField(max_length=150, help_text='Username of the signaller')
     reason = models.TextField()
-    evidence = models.TextField(blank=True, null_help_text='Links or description of evidence (images, files)')
+    evidence = models.TextField(blank=True, null=True, help_text='Links or description of evidence (images, files)')
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(default=timezone.now)
     approved_at = models.DateTimeField(blank=True, null=True)
