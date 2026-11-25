@@ -138,7 +138,7 @@ class WriteUp(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     approved_at = models.DateTimeField(blank=True, null=True)
     approved_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='approvals')
-    investigation = models.ForeignKey('Investigation', on_delete=models.SET_NULL, null=True, blank=True, related='write_ups')
+    investigation = models.ForeignKey('Investigation', on_delete=models.SET_NULL, null=True, blank=True, related_name='write_ups')
 
     class Meta:
         ordering = ['-created_at']
