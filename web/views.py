@@ -11,7 +11,6 @@ from django.utils import timezone
 
 from .models import Staff, Investigation, AuditLog, DiscordWebhook, WriteUp, SignallerSupervisorLimit
 
-
 import os
 
 
@@ -571,3 +570,224 @@ def api_admin_rename(request, username):
     Investigation.objects.filter(closed_by=old).update(closed_by=new_username)
     _audit(u, 'RENAME_STAFF', old, 'Renamed to ' + new_username)
     return JsonResponse({'success': True})
+
+
+# -------------------------------------------------
+#  NEW VIEWS (appended below the existing API views)
+# -------------------------------------------------
+from django.contrib import messages
+from django.core.files.base import ContentFile
+from django.core import signing
+from django.template.loader import render_to_string
+from django.http import Http404, HttpResponseBadRequest
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas as pdf_canvas
+
+
+# -----------------------------------------------------------------
+#  Home page – role‑aware start screen (requires login)
+# -----------------------------------------------------------------
+def home_view(request):
+    """
+    Shows a start page after login.
+    - staff / controller -> "Choose your next step" with buttons to
+      Investigations, Write‑ups, Supervisor view, etc.
+    - admin            -> direct to the admin dashboard.
+    """
+    from .models import Staff
+    u = Staff.objects.filter(username=request.user.username).first() if request.user.is_authenticated else None
+    if not u:
+        return redirect('/login')
+    # role based routing
+    if u.role == 'admin':
+        return redirect('/admin-dashboard/')
+    # staff / controller see a simple start page
+    return render(request, 'home.html', {'user': u})
+
+
+# -----------------------------------------------------------------
+#  Supervisor page – see signallers, their write‑ups, add a signaller (1/hr)
+# -----------------------------------------------------------------
+def supervisor_view(request):
+    u, err = _require_auth(request)
+    if err:
+        return redirect('/login')
+    if u.role not in ('staff', 'admin'):
+        return redirect('/login')
+
+    # ---- list signallers that this supervisor has assigned ----
+    limits = SignallerSupervisorLimit.objects.filter(
+        supervisor=u).select_related('signaller')
+    # group by signaller – show how many active (within the hour)
+    signaller_counts = {}
+    for l in limits:
+        signaller_counts[l.signaller] = signaller_counts.get(l.signaller, 0) + 1
+
+    # ---- write‑ups that mention this supervisor (or his signallers) ----
+    write_ups = WriteUp.objects.filter(
+        status='approved').select_related('investigation')
+
+    # ---- handle adding a new signaller (POST) ----
+    if request.method == 'POST':
+        sig_username = request.POST.get('signaller_username', '').strip()
+        if not sig_username:
+            messages.error(request, 'Enter a signaller username.')
+        elif SignallerSupervisorLimit.objects.filter(
+                supervisor=u, signaller=sig_username).exists():
+            # already has one within the hour – block
+            messages.error(request, 'You already have a signaller assigned this hour.')
+        else:
+            try:
+                SignallerSupervisorLimit.objects.create(
+                    supervisor=u, signaller=sig_username)
+                messages.success(request, 'Signaller added (valid for this hour).')
+            except ValueError:
+                messages.error(request, 'A supervisor may have at most 1 signaller per hour.')
+        return redirect('supervisor')
+
+    return render(request, 'supervisor.html', {
+        'user': u,
+        'signaller_counts': signaller_counts,
+        'write_ups': write_ups,
+    })
+
+
+# -----------------------------------------------------------------
+#  Administrator dashboard – audit log, member list, add signaller/supervisor
+# -----------------------------------------------------------------
+def admin_dashboard_view(request):
+    u, err = _require_admin(request)
+    if err:
+        return redirect('/login')
+
+    # ----- audit log -------------------------------------------------
+    audit_entries = AuditLog.objects.select_related('performed_by').order_by('-created_at')[:50]
+
+    # ----- member list -------------------------------------------------
+    members = Staff.objects.all().order_by('username')
+
+    # ----- add signaller / supervisor (admin only) -----------------
+    if request.method == 'POST':
+        form_type = request.POST.get('form_type')
+        username = request.POST.get('username', '').strip()
+        role = request.POST.get('role')
+        if not username:
+            messages.error(request, 'Username required.')
+        elif Staff.objects.filter(username=username).exists():
+            messages.error(request, 'Username already exists.')
+        else:
+            temp = ''.join(random.choices('0123456789', k=5))
+            new_user = Staff(username=username,
+                             role=role,
+                             must_change_password=True)
+            new_user.set_password(temp)
+            new_user.save()
+            # audit
+            AuditLog.objects.create(
+                performed_by=u.username,
+                action='ADD_STAFF',
+                target=username,
+                detail=f'Role={role}, temp PW={temp}')
+            messages.success(request, f'User {username} created (temp password: {temp}).')
+            return redirect('admin_dashboard')
+
+    return render(request, 'admin_dashboard.html', {
+        'user': u,
+        'audit_entries': audit_entries,
+        'members': members,
+    })
+
+
+# -----------------------------------------------------------------
+#  Write‑up creation (supervisor) -------------------------------------------------
+# -----------------------------------------------------------------
+def writeup_create(request):
+    u, err = _require_auth(request)
+    if err:
+        return redirect('/login')
+    if u.role not in ('staff', 'admin'):        # only supervisors can request
+        return redirect('/login')
+
+    if request.method == 'POST':
+        signaller = request.POST.get('signaller', '').strip()
+        reason = request.POST.get('reason', '').strip()
+        evidence = request.POST.get('evidence', '').strip()   # free‑form text/links
+        if not signaller or not reason:
+            messages.error(request, 'Title and description are required.')
+        else:
+            WriteUp.objects.create(
+                signaller=signaller,
+                reason=reason,
+                evidence=evidence,
+                status='pending',
+                created_by=u)           # we store the creator on the model later
+            messages.success(request, 'Write‑up submitted – pending manager approval.')
+            return redirect('home')
+
+    return render(request, 'writeup_form.html', {'user': u})
+
+
+# -----------------------------------------------------------------
+#  Write‑up approval (manager) -------------------------------------------------
+# -----------------------------------------------------------------
+def writeup_approve(request, pk):
+    u, err = _require_admin(request)          # only admins may approve
+    if err:
+        return redirect('/login')
+
+    from django.shortcuts import get_object_or_404
+    wu = get_object_or_404(WriteUp, pk=pk)
+    if request.method == 'POST':
+        action = request.POST.get('action')      # 'approve' or 'reject'
+        if action == 'approve':
+            wu.status = 'approved'
+            wu.approved_at = timezone.now()
+            wu.approved_by = u
+            wu.save()
+            # optional: notify the signaller (here we just add a message)
+            messages.success(request, f'Write‑up #{wu.id} approved – the signaller can now see it on their account.')
+        else:
+            wu.status = 'rejected'
+            wu.save()
+            messages.success(request, f'Write‑up #{wu.id} rejected.')
+        return redirect('home')   # or a dedicated write‑up list
+
+    # GET – show confirmation page
+    return render(request, 'writeup_confirm.html', {'writeup': wu, 'user': u})
+
+
+# -----------------------------------------------------------------
+#  Investigation edit – now uses the fresh CSS (style.css) -------------
+# -----------------------------------------------------------------
+def investigation_edit(request, pk):
+    """Allow editing an investigation with the fresh Signaller‑Web CSS."""
+    u, err = _require_auth(request)
+    if err:
+        return redirect('/login')
+
+    from django.shortcuts import get_object_or_404
+    inv = get_object_or_404(Investigation, pk=pk)
+
+    # Simple permission check – only the opener or an admin may edit
+    if u != inv.opened_by and not u.is_admin:
+        messages.error(request, 'You are not allowed to edit this investigation.')
+        return redirect('investigation', pk=inv.pk)
+
+    if request.method == 'POST':
+        # basic field updates – you can expand this form as needed
+        inv.title = request.POST.get('title', inv.title) or inv.title
+        inv.location = request.POST.get('location', inv.location) or inv.location
+        inv.description = request.POST.get('description', inv.description) or inv.description
+        inv.outcome = request.POST.get('outcome', inv.outcome) or inv.outcome
+        inv.findings = request.POST.get('findings', inv.findings) or inv.findings
+        inv.recommendations = request.POST.get('recommendations', inv.recommendations) or inv.recommendations
+        inv.save()
+        messages.success(request, 'Investigation updated.')
+        return redirect('investigation', pk=inv.pk)
+
+    # GET – render the edit form (the template already pulls in style.css)
+    return render(request, 'investigation_edit.html', {
+        'user': u,
+        'inv': inv,
+    })
