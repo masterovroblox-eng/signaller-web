@@ -9,7 +9,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 
-from .models import Staff, Investigation, AuditLog, DiscordWebhook
+from .models import Staff, Investigation, AuditLog, DiscordWebhook, WriteUp, SignallerSupervisorLimit
 
 
 import os

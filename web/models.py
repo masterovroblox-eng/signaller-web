@@ -129,6 +129,55 @@ class AuditLog(models.Model):
         ordering = ['-created_at']
 
 
+class WriteUp(models.Model):
+    STATUS_CHOICES = [('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')]
+    signaller = models.CharField(max_length=150, help_text='Username of the signaller')
+    reason = models.TextField()
+    evidence = models.TextField(blank=True, null_help_text='Links or description of evidence (images, files)')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(default=timezone.now)
+    approved_at = models.DateTimeField(blank=True, null=True)
+    approved_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='approvals')
+    investigation = models.ForeignKey('Investigation', on_delete=models.SET_NULL, null=True, blank=True, related='write_ups')
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Write-up for {self.signaller} - {self.status}'
+
+
+class SignallerSupervisorLimit(models.Model):
+    """
+    Tracks how many signallers a supervisor has assigned in the last hour.
+    Enforces the rule: a supervisor may have at most 1 signaller per hour.
+    """
+    supervisor = models.ForeignKey('Staff', on_delete=models.CASCADE, related='signaller_limits')
+    signaller = models.CharField(max_length=150)  # username of the signaller
+    assigned_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-assigned_at']
+        unique_together = ('supervisor', 'signaller', 'assigned_at_hour')
+
+    def save(self, *args, **kwargs):
+        # Compute the hour bucket for the uniqueness constraint
+        from django.db.models import ExtractHour
+        # We'll use a custom approach: delete old entries older than 1 hour
+        now = timezone.now()
+        cutoff = now - timezone.timedelta(hours=1)
+        SignallerSupervisorLimit.objects.filter(supervisor=self.supervisor, assigned_at__lt=cutoff).delete()
+        # Now check if there is already an entry for this supervisor+signaller within the hour
+        exists = SignallerSupervisorLimit.objects.filter(
+            supervisor=self.supervisor,
+            signaller=self.signaller,
+            assigned_at__gte=cutoff
+        ).exists()
+        if exists:
+            raise ValueError('A supervisor may have at most 1 signaller per hour.')
+        super().save(*args, **kwargs)
+
+
 class DiscordWebhook(models.Model):
     name = models.CharField(max_length=100, default='default')
     url = models.URLField()

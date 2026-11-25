@@ -2,13 +2,28 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    path('', views.index, name='index'),
+    # Homepage – requires login, shows a role‑based start page
+    path('', views.home_view, name='home'),
+
+    # Supervisor page – SV can see signallers and their write‑ups, add a signaller (1 per hour)
+    path('supervisor/', views.supervisor_view, name='supervisor'),
+
+    # Administrator page – audit log, member list, add signaller/supervisor (admin only)
+    path('admin-dashboard/', views.admin_dashboard_view, name='admin_dashboard'),
+
+    # Write‑up creation (supervisor) and approval (manager)
+    path('writeup/create/', views.writeup_create, name='writeup_create'),
+    path('writeup/approve/<int:pk>/', views.writeup_approve, name='writeup_approve'),
+
+    # Investigation edit (with proper CSS)
+    path('investigation/<int:pk>/edit/', views.investigation_edit, name='investigation_edit'),
+
     path('reset-admin', views.reset_admin_view, name='reset_admin'),
     path('login', views.login_view, name='login'),
     path('logout', views.logout_view, name='logout'),
     path('investigations', views.investigations_view, name='investigations'),
     path('investigation/<int:pk>', views.investigation_view, name='investigation'),
-    path('admin', views.admin_view, name='admin'),
+    path('admin', views.admin_view, name='admin'),  # legacy, kept for backwards compat
     path('privacy', views.privacy_view, name='privacy'),
     path('terms', views.terms_view, name='terms'),
     path('404', views.not_found_view, name='not_found'),
