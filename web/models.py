@@ -158,7 +158,7 @@ class SignallerSupervisorLimit(models.Model):
 
     class Meta:
         ordering = ['-assigned_at']
-        unique_together = ('supervisor', 'signaller', 'assigned_at_hour')
+        unique_together = ('supervisor', 'signaller')
 
     def save(self, *args, **kwargs):
         # Compute the hour bucket for the uniqueness constraint
