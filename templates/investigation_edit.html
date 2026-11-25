@@ -1,0 +1,77 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Investigation — {{ inv.title }} | Signaller Web</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'assets/favicon.png' %}">
+    <meta name="theme-color" content="#0f172a">
+    <style>
+        body { background: #f1f5f9; }
+    </style>
+</head>
+<body>
+<header>
+    <div class="nav-container">
+        <div class="logo-area">
+            <img class="nav-logo" src="{% static 'assets/logo.png' %}" alt="Signaller Web">
+            <span class="nav-title">Edit Investigation</span>
+        </div>
+        <div class="nav-buttons-wrapper">
+            <button onclick="window.location.href='/investigation/{{ inv.pk }}'" class="login-btn" style="background:#64748b;">View Investigation</button>
+            <button onclick="logout()" class="login-btn" style="background:#ef4444;">Logout</button>
+        </div>
+    </div>
+</header>
+
+<div class="dash-main">
+    <section class="dash-section">
+        <h2>Edit Investigation — {{ inv.title }}</h2>
+
+        <form method="post" style="display: flex; flex-direction: column; gap: 16px; max-width: 700px;">
+            {% csrf_token %}
+            <label>
+                Location:
+                <input type="text" name="location" value="{{ inv.location|default:'' }}"
+                       style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem;">
+            </label>
+            <label>
+                Description:
+                <textarea name="description" rows="4"
+                          style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; resize: vertical;">{{ inv.description|default:'' }}</textarea>
+            </label>
+            <label>
+                Outcome:
+                <input type="text" name="outcome" value="{{ inv.outcome|default:'' }}"
+                       style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem;">
+            </label>
+            <label>
+                Findings:
+                <textarea name="findings" rows="4"
+                          style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; resize: vertical;">{{ inv.findings|default:'' }}</textarea>
+            </label>
+            <label>
+                Recommendations:
+                <textarea name="recommendations" rows="4"
+                          style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; resize: vertical;">{{ inv.recommendations|default:'' }}</textarea>
+            </label>
+            <button type="submit" class="login-btn" style="align-self: flex-start;">Save Changes</button>
+        </form>
+
+        <p style="margin-top: 20px;"><a href="/investigation/{{ inv.pk }}" style="color: var(--primary);">Cancel — view investigation</a></p>
+    </section>
+
+    {% if messages %}
+    <ul class="messages" style="list-style: none; padding: 0; margin-top: 20px;">
+        {% for message in messages %}
+            <li style="padding: 10px 16px; border-radius: 8px; margin-bottom: 8px; background: {% if message.tags == 'error' %}#fee2e2; color: #dc2626{% elif message.tags == 'success' %}#dcfce7; color: #16a34a{% else %}#e0e7ff; color: #4f46e5{% endif %};">{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
+
+<script src="{% static 'app.js' %}"></script>
+</body>
+</html>

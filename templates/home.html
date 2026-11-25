@@ -1,0 +1,58 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home | Signaller Web</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'assets/favicon.png' %}">
+    <meta name="theme-color" content="#0f172a">
+    <style>
+        body { background: #f1f5f9; }
+    </style>
+</head>
+<body>
+<header>
+    <div class="nav-container">
+        <div class="logo-area">
+            <img class="nav-logo" src="{% static 'assets/logo.png' %}" alt="Signaller Web">
+            <span class="nav-title">Signaller Web</span>
+        </div>
+        <div class="nav-buttons-wrapper">
+            {% if user.is_admin %}
+                <button class="login-btn" onclick="window.location.href='/admin-dashboard/'">Admin</button>
+            {% endif %}
+            <button onclick="logout()" class="login-btn" style="background:#ef4444;">Logout</button>
+        </div>
+    </div>
+</header>
+
+<div class="dash-main">
+    <section class="dash-section">
+        <h2>Welcome, {{ user.username }}</h2>
+        <p style="color: var(--muted); margin-bottom: 20px;">Please choose your next step:</p>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 30px;">
+            <a href="/investigations" class="login-btn" style="text-decoration: none; display: inline-block;">Investigations</a>
+            <a href="/supervisor/" class="login-btn" style="text-decoration: none; display: inline-block;">Supervisor</a>
+            <a href="/writeup/create/" class="login-btn" style="text-decoration: none; display: inline-block;">Request a Write-up</a>
+        </div>
+
+        <p style="color: var(--muted); font-size: 0.9rem;">
+            You are logged in as <strong>{{ user.get_role_display }}</strong>.
+        </p>
+    </section>
+
+    {% if messages %}
+    <ul class="messages" style="list-style: none; padding: 0; margin-top: 20px;">
+        {% for message in messages %}
+            <li style="padding: 10px 16px; border-radius: 8px; margin-bottom: 8px; background: {% if message.tags == 'error' %}#fee2e2; color: #dc2626{% elif message.tags == 'success' %}#dcfce7; color: #16a34a{% else %}#e0e7ff; color: #4f46e5{% endif %};">{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
+
+<script src="{% static 'app.js' %}"></script>
+</body>
+</html>

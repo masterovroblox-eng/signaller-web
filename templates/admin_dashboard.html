@@ -1,0 +1,114 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard | Signaller Web</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'assets/favicon.png' %}">
+    <meta name="theme-color" content="#0f172a">
+    <style>
+        body { background: #f1f5f9; }
+    </style>
+</head>
+<body>
+<header>
+    <div class="nav-container">
+        <div class="logo-area">
+            <img class="nav-logo" src="{% static 'assets/logo.png' %}" alt="Signaller Web">
+            <span class="nav-title">Admin Dashboard</span>
+        </div>
+        <div class="nav-buttons-wrapper">
+            <button onclick="window.location.href='/investigations'" class="login-btn" style="background:#06b6d4;">Investigations</button>
+            <button onclick="logout()" class="login-btn" style="background:#ef4444;">Logout</button>
+        </div>
+    </div>
+</header>
+
+<div class="dash-main">
+    <section class="dash-section">
+        <h2>Admin Dashboard — {{ user.username }}</h2>
+
+        <h3>Audit Log (Last 50 Entries)</h3>
+        {% if audit_entries %}
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+            <thead>
+                <tr>
+                    <th style="text-align: left; padding: 10px; border-bottom: 2px solid var(--border);">When</th>
+                    <th style="text-align: left; padding: 10px; border-bottom: 2px solid var(--border);">Action</th>
+                    <th style="text-align: left; padding: 10px; border-bottom: 2px solid var(--border);">By</th>
+                    <th style="text-align: left; padding: 10px; border-bottom: 2px solid var(--border);">Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in audit_entries %}
+                <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid var(--border);">{{ a.created_at|date:"d M H:i" }}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid var(--border);">{{ a.action }}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid var(--border);">{{ a.performed_by }}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid var(--border);">{{ a.detail|truncatechars:50 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p style="color: var(--muted); margin-bottom: 24px;">No audit entries.</p>
+        {% endif %}
+
+        <h3>Member List</h3>
+        {% if members %}
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+            <thead>
+                <tr>
+                    <th style="text-align: left; padding: 10px; border-bottom: 2px solid var(--border);">Username</th>
+                    <th style="text-align: left; padding: 10px; border-bottom: 2px solid var(--border);">Role</th>
+                    <th style="text-align: left; padding: 10px; border-bottom: 2px solid var(--border);">Must Change PW</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in members %}
+                <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid var(--border);">{{ m.username }}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid var(--border);">{{ m.get_role_display }}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid var(--border);">{{ m.must_change_password }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p style="color: var(--muted); margin-bottom: 24px;">No members.</p>
+        {% endif %}
+
+        <h3>Add New User (Admin Only)</h3>
+        <form method="post" style="display: flex; flex-direction: column; gap: 12px; max-width: 400px;">
+            {% csrf_token %}
+            <input type="hidden" name="form_type" value="add">
+            <label>
+                Username:
+                <input type="text" name="username" required
+                       style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem;">
+            </label>
+            <label>
+                Role:
+                <select name="role" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem;">
+                    <option value="staff">Supervisor (staff)</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </label>
+            <button type="submit" class="login-btn" style="align-self: flex-start;">Create User</button>
+        </form>
+    </section>
+
+    {% if messages %}
+    <ul class="messages" style="list-style: none; padding: 0; margin-top: 20px;">
+        {% for message in messages %}
+            <li style="padding: 10px 16px; border-radius: 8px; margin-bottom: 8px; background: {% if message.tags == 'error' %}#fee2e2; color: #dc2626{% elif message.tags == 'success' %}#dcfce7; color: #16a34a{% else %}#e0e7ff; color: #4f46e5{% endif %};">{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
+
+<script src="{% static 'app.js' %}"></script>
+</body>
+</html>

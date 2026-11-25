@@ -132,7 +132,7 @@ def index(request):
         if u.is_locked or u.must_change_password:
             logout(request)
             return redirect('/login')
-        return redirect('/investigations')
+        return redirect('/home')
     return redirect('/login')
 
 
@@ -595,9 +595,11 @@ def home_view(request):
       Investigations, Write‑ups, Supervisor view, etc.
     - admin            -> direct to the admin dashboard.
     """
-    from .models import Staff
-    u = Staff.objects.filter(username=request.user.username).first() if request.user.is_authenticated else None
-    if not u:
+    if not request.user.is_authenticated:
+        return redirect('/login')
+    u = request.user
+    if u.is_locked or u.must_change_password:
+        logout(request)
         return redirect('/login')
     # role based routing
     if u.role == 'admin':
@@ -618,7 +620,7 @@ def supervisor_view(request):
 
     # ---- list signallers that this supervisor has assigned ----
     limits = SignallerSupervisorLimit.objects.filter(
-        supervisor=u).select_related('signaller')
+        supervisor=u).order_by('-assigned_at')[:20]
     # group by signaller – show how many active (within the hour)
     signaller_counts = {}
     for l in limits:
@@ -662,7 +664,7 @@ def admin_dashboard_view(request):
         return redirect('/login')
 
     # ----- audit log -------------------------------------------------
-    audit_entries = AuditLog.objects.select_related('performed_by').order_by('-created_at')[:50]
+    audit_entries = AuditLog.objects.order_by('-created_at')[:50]
 
     # ----- member list -------------------------------------------------
     members = Staff.objects.all().order_by('username')
@@ -755,6 +757,111 @@ def writeup_approve(request, pk):
 
     # GET – show confirmation page
     return render(request, 'writeup_confirm.html', {'writeup': wu, 'user': u})
+
+
+# -----------------------------------------------------------------
+#  Write-up PDF download
+# -----------------------------------------------------------------
+def writeup_pdf(request, pk):
+    u, err = _require_auth(request)
+    if err:
+        return redirect('/login')
+
+    from django.shortcuts import get_object_or_404
+    wu = get_object_or_404(WriteUp, pk=pk)
+
+    # Only approved write-ups can be downloaded as PDF, and only by the signaller, supervisor, or admin
+    if wu.status != 'approved':
+        messages.error(request, 'Write-up must be approved before downloading.')
+        return redirect('home')
+
+    # Permission: signaller, creator (supervisor), or admin
+    is_signaller = (u.username == wu.signaller)
+    is_creator = (wu.created_by and u.username == wu.created_by.username)
+    is_admin = u.is_admin
+    if not (is_signaller or is_creator or is_admin):
+        messages.error(request, 'You do not have permission to download this write-up.')
+        return redirect('home')
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas as pdf_canvas
+    from django.http import HttpResponse
+
+    buffer = BytesIO()
+    p = pdf_canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    # Title
+    p.setFont('Helvetica-Bold', 16)
+    p.drawString(50, height - 50, 'Write-up Report')
+    p.setFont('Helvetica', 10)
+    p.drawString(50, height - 70, f'Generated: {timezone.now().strftime("%d %B %Y %H:%M")}')
+
+    # Write-up details
+    y = height - 110
+    p.setFont('Helvetica-Bold', 12)
+    p.drawString(50, y, 'Write-up Details')
+    y -= 20
+    p.setFont('Helvetica', 11)
+    details = [
+        ('ID', str(wu.id)),
+        ('Signaller', wu.signaller),
+        ('Status', wu.status.title()),
+        ('Created', wu.created_at.strftime('%d %B %Y %H:%M') if wu.created_at else 'N/A'),
+        ('Approved', wu.approved_at.strftime('%d %B %Y %H:%M') if wu.approved_at else 'N/A'),
+        ('Approved By', wu.approved_by.username if wu.approved_by else 'N/A'),
+    ]
+    for label, value in details:
+        p.drawString(50, y, f'{label}: {value}')
+        y -= 18
+
+    # Reason
+    y -= 10
+    p.setFont('Helvetica-Bold', 12)
+    p.drawString(50, y, 'Reason / Incident Description')
+    y -= 20
+    p.setFont('Helvetica', 11)
+    for line in wu.reason.split('\n'):
+        p.drawString(50, y, line[:100])
+        y -= 16
+        if y < 50:
+            p.showPage()
+            y = height - 50
+
+    # Evidence
+    if wu.evidence:
+        y -= 10
+        p.setFont('Helvetica-Bold', 12)
+        p.drawString(50, y, 'Evidence')
+        y -= 20
+        p.setFont('Helvetica', 11)
+        for line in wu.evidence.split('\n'):
+            p.drawString(50, y, line[:100])
+            y -= 16
+            if y < 50:
+                p.showPage()
+                y = height - 50
+
+    # Linked investigation
+    if wu.investigation:
+        y -= 10
+        p.setFont('Helvetica-Bold', 12)
+        p.drawString(50, y, 'Linked Investigation')
+        y -= 20
+        p.setFont('Helvetica', 11)
+        p.drawString(50, y, f'Title: {wu.investigation.title}')
+        y -= 16
+        p.drawString(50, y, f'Reference: {wu.investigation.reference_code}')
+        y -= 16
+        p.drawString(50, y, f'Status: {wu.investigation.status}')
+
+    p.showPage()
+    p.save()
+
+    buffer.seek(0)
+    response = HttpResponse(buffer, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="writeup_{wu.id}.pdf"'
+    return response
 
 
 # -----------------------------------------------------------------

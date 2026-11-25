@@ -14,6 +14,7 @@ urlpatterns = [
     # Write‑up creation (supervisor) and approval (manager)
     path('writeup/create/', views.writeup_create, name='writeup_create'),
     path('writeup/approve/<int:pk>/', views.writeup_approve, name='writeup_approve'),
+    path('writeup/pdf/<int:pk>/', views.writeup_pdf, name='writeup_pdf'),
 
     # Investigation edit (with proper CSS)
     path('investigation/<int:pk>/edit/', views.investigation_edit, name='investigation_edit'),

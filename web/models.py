@@ -137,7 +137,8 @@ class WriteUp(models.Model):
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(default=timezone.now)
     approved_at = models.DateTimeField(blank=True, null=True)
-    approved_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='approvals')
+    approved_by = models.ForeignKey('Staff', on_delete=models.SET_NULL, null=True, blank=True, related_name='writeup_approvals')
+    created_by = models.ForeignKey('Staff', on_delete=models.SET_NULL, null=True, blank=True, related_name='writeups_created')
     investigation = models.ForeignKey('Investigation', on_delete=models.SET_NULL, null=True, blank=True, related_name='write_ups')
 
     class Meta:
@@ -158,7 +159,6 @@ class SignallerSupervisorLimit(models.Model):
 
     class Meta:
         ordering = ['-assigned_at']
-        unique_together = ('supervisor', 'signaller')
 
     def save(self, *args, **kwargs):
         # Compute the hour bucket for the uniqueness constraint
@@ -167,10 +167,9 @@ class SignallerSupervisorLimit(models.Model):
         now = timezone.now()
         cutoff = now - timezone.timedelta(hours=1)
         SignallerSupervisorLimit.objects.filter(supervisor=self.supervisor, assigned_at__lt=cutoff).delete()
-        # Now check if there is already an entry for this supervisor+signaller within the hour
+        # Now check if there is already ANY entry for this supervisor within the hour
         exists = SignallerSupervisorLimit.objects.filter(
             supervisor=self.supervisor,
-            signaller=self.signaller,
             assigned_at__gte=cutoff
         ).exists()
         if exists:

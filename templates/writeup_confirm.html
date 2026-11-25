@@ -1,0 +1,66 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Approve Write-up | Signaller Web</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+    <link rel="icon" type="image/x-icon" href="{% static 'assets/favicon.png' %}">
+    <meta name="theme-color" content="#0f172a">
+    <style>
+        body { background: #f1f5f9; }
+    </style>
+</head>
+<body>
+<header>
+    <div class="nav-container">
+        <div class="logo-area">
+            <img class="nav-logo" src="{% static 'assets/logo.png' %}" alt="Signaller Web">
+            <span class="nav-title">Approve Write-up</span>
+        </div>
+        <div class="nav-buttons-wrapper">
+            <button onclick="window.location.href='/home'" class="login-btn" style="background:#64748b;">Home</button>
+            <button onclick="logout()" class="login-btn" style="background:#ef4444;">Logout</button>
+        </div>
+    </div>
+</header>
+
+<div class="dash-main">
+    <section class="dash-section">
+        <h2>Approve / Reject Write-up #{{ writeup.id }}</h2>
+
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px;">
+            <p><strong>Signaller:</strong> {{ writeup.signaller }}</p>
+            <p><strong>Reason:</strong> {{ writeup.reason }}</p>
+            <p><strong>Evidence:</strong> {{ writeup.evidence|default:"(none)" }}</p>
+            <p><strong>Current Status:</strong> {{ writeup.status|title }}</p>
+            {% if writeup.investigation %}
+            <p><strong>Linked Investigation:</strong> {{ writeup.investigation.title }}</p>
+            {% endif %}
+        </div>
+
+        <form method="post" style="display: flex; gap: 12px;">
+            {% csrf_token %}
+            <button type="submit" name="action" value="approve" class="login-btn" style="background: var(--success);">Approve</button>
+            <button type="submit" name="action" value="reject" class="login-btn" style="background: var(--danger);">Reject</button>
+        </form>
+
+        {% if writeup.status == 'approved' %}
+        <p style="margin-top: 12px;"><a href="/writeup/pdf/{{ writeup.id }}/" class="login-btn" style="text-decoration: none; display: inline-block;">Download PDF</a></p>
+        {% endif %}
+        <p style="margin-top: 20px;"><a href="/home" style="color: var(--primary);">Back to home</a></p>
+    </section>
+
+    {% if messages %}
+    <ul class="messages" style="list-style: none; padding: 0; margin-top: 20px;">
+        {% for message in messages %}
+            <li style="padding: 10px 16px; border-radius: 8px; margin-bottom: 8px; background: {% if message.tags == 'error' %}#fee2e2; color: #dc2626{% elif message.tags == 'success' %}#dcfce7; color: #16a34a{% else %}#e0e7ff; color: #4f46e5{% endif %};">{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
+
+<script src="{% static 'app.js' %}"></script>
+</body>
+</html>
