@@ -152,7 +152,7 @@ class SignallerSupervisorLimit(models.Model):
     Tracks how many signallers a supervisor has assigned in the last hour.
     Enforces the rule: a supervisor may have at most 1 signaller per hour.
     """
-    supervisor = models.ForeignKey('Staff', on_delete=models.CASCADE, related='signaller_limits')
+    supervisor = models.ForeignKey('Staff', on_delete=models.CASCADE, related_name='signaller_limits')
     signaller = models.CharField(max_length=150)  # username of the signaller
     assigned_at = models.DateTimeField(auto_now_add=True)
 
